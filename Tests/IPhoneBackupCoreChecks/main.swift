@@ -50,6 +50,27 @@ func testMergeHandlesEmptyInputs() {
     expectEqual(onlyWifi[0].connection, .wifi, "wifi-only keeps wifi connection")
 }
 
+func testParseNetworkUDIDsBasic() {
+    let output = "00008030-0011AABB\n00008101-0022CCDD\n"
+
+    let udids = NetworkDeviceParsing.parseUDIDs(from: output)
+
+    expectEqual(udids, ["00008030-0011AABB", "00008101-0022CCDD"], "two udids parsed")
+}
+
+func testParseNetworkUDIDsStripsSuffixAndBlankLines() {
+    let output = "  00008030-0011AABB (Network)  \n\n   \n00008101-0022CCDD\n"
+
+    let udids = NetworkDeviceParsing.parseUDIDs(from: output)
+
+    expectEqual(udids, ["00008030-0011AABB", "00008101-0022CCDD"], "suffix and blank lines handled")
+}
+
+func testParseNetworkUDIDsEmpty() {
+    expectEqual(NetworkDeviceParsing.parseUDIDs(from: "").count, 0, "empty output -> no udids")
+    expectEqual(NetworkDeviceParsing.parseUDIDs(from: "\n  \n").count, 0, "whitespace-only -> no udids")
+}
+
 func testKeepsOriginalFilenameWhenItHasNotBeenUsed() {
     let namer = BackupFileNamer()
 
@@ -156,6 +177,9 @@ func testOrganizesBackupPhotosIntoMediaTypeAndDateFolders() throws {
 testMergePrefersUSBForSameName()
 testMergeKeepsDistinctDevicesSorted()
 testMergeHandlesEmptyInputs()
+testParseNetworkUDIDsBasic()
+testParseNetworkUDIDsStripsSuffixAndBlankLines()
+testParseNetworkUDIDsEmpty()
 testKeepsOriginalFilenameWhenItHasNotBeenUsed()
 testAddsNumericSuffixForDuplicateNames()
 testSanitizesPathSeparatorsAndBlankNames()
