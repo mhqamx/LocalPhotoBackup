@@ -12,6 +12,19 @@ final class BackupViewModel: ObservableObject {
 
     private let importer = ImageCapturePhotoImporter()
     private let fullBackupExporter = FullBackupPhotoExporter()
+    private let networkDiscovery = NetworkDeviceDiscovery()
+
+    private var usbDevices: [PhotoDevice] = []
+    private var wifiDevices: [PhotoDevice] = []
+
+    private func rebuildDevices() {
+        devices = BackupDeviceMerger.merge(usb: usbDevices, wifi: wifiDevices)
+        if selectedDeviceID == nil {
+            selectedDeviceID = devices.first?.id
+        } else if let selected = selectedDeviceID, !devices.contains(where: { $0.id == selected }) {
+            selectedDeviceID = devices.first?.id
+        }
+    }
 
     var selectedDevice: PhotoDevice? {
         devices.first { $0.id == selectedDeviceID }
@@ -42,12 +55,8 @@ final class BackupViewModel: ObservableObject {
     init() {
         importer.onDevicesChanged = { [weak self] devices in
             Task { @MainActor in
-                self?.devices = devices
-                if self?.selectedDeviceID == nil {
-                    self?.selectedDeviceID = devices.first?.id
-                } else if let selected = self?.selectedDeviceID, !devices.contains(where: { $0.id == selected }) {
-                    self?.selectedDeviceID = devices.first?.id
-                }
+                self?.usbDevices = devices
+                self?.rebuildDevices()
             }
         }
         importer.onProgressChanged = { [weak self] progress in
@@ -91,6 +100,18 @@ final class BackupViewModel: ObservableObject {
                 }
             }
         }
+        networkDiscovery.onDevicesChanged = { [weak self] devices in
+            Task { @MainActor in
+                self?.wifiDevices = devices
+                self?.rebuildDevices()
+            }
+        }
+        networkDiscovery.onLog = { [weak self] level, message in
+            Task { @MainActor in
+                self?.appendLog(level: level, message)
+            }
+        }
+        networkDiscovery.start()
         importer.startScanning()
     }
 
@@ -112,13 +133,24 @@ final class BackupViewModel: ObservableObject {
     }
 
     func startExport() {
-        guard let selectedDeviceID, let destinationURL else { return }
-        if fullBackupExporter.isAvailable {
-            appendLog(level: .info, "检测到完整备份工具，将优先导出备份协议中的全部照片")
-            fullBackupExporter.export(to: destinationURL)
-        } else {
-            appendLog(level: .warning, "未检测到完整备份工具，只能使用 macOS 相机接口，可能漏掉 iCloud/备份协议中的资源")
-            importer.exportDevice(id: selectedDeviceID, to: destinationURL)
+        guard let selectedDeviceID, let destinationURL, let device = selectedDevice else { return }
+
+        switch device.connection {
+        case .wifi:
+            guard fullBackupExporter.isAvailable else {
+                appendLog(level: .error, "无线导出需要 idevicebackup2；请执行 brew install libimobiledevice 后重试")
+                return
+            }
+            appendLog(level: .info, "通过 Wi-Fi 导出 \(device.name) 的完整备份")
+            fullBackupExporter.export(to: destinationURL, udid: device.udid, useNetwork: true)
+        case .usb:
+            if fullBackupExporter.isAvailable {
+                appendLog(level: .info, "检测到完整备份工具，将优先导出备份协议中的全部照片")
+                fullBackupExporter.export(to: destinationURL, udid: device.udid, useNetwork: false)
+            } else {
+                appendLog(level: .warning, "未检测到完整备份工具，只能使用 macOS 相机接口，可能漏掉 iCloud/备份协议中的资源")
+                importer.exportDevice(id: selectedDeviceID, to: destinationURL)
+            }
         }
     }
 
