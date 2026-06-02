@@ -26,6 +26,15 @@ final class NetworkDeviceDiscovery {
         timer = nil
     }
 
+    /// 立即触发一次扫描（用于手动刷新），不影响周期性轮询。
+    func refresh() {
+        queue.async { [weak self] in self?.poll() }
+    }
+
+    deinit {
+        stop()
+    }
+
     private func poll() {
         guard !isPolling else { return }
         isPolling = true

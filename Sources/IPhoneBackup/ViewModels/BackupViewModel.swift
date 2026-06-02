@@ -160,13 +160,18 @@ final class BackupViewModel: ObservableObject {
     }
 
     func refreshSelectedDevice() {
-        guard let selectedDeviceID else { return }
-        importer.refreshDevice(id: selectedDeviceID)
+        guard let selectedDeviceID, let device = selectedDevice else { return }
+        switch device.connection {
+        case .wifi:
+            networkDiscovery.refresh()
+        case .usb:
+            importer.refreshDevice(id: selectedDeviceID)
+        }
     }
 
     func detailText(for device: PhotoDevice) -> String {
         if usesFullBackupMode {
-            var parts: [String] = []
+            var parts: [String] = [device.connection.label]
             if !device.productKind.isEmpty {
                 parts.append(device.productKind)
             }
