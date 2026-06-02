@@ -25,7 +25,7 @@ final class FullBackupPhotoExporter {
             .first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
-    func export(to destinationURL: URL) {
+    func export(to destinationURL: URL, udid: String? = nil, useNetwork: Bool = false) {
         guard runningProcess == nil else {
             onLog?(.warning, "完整备份任务正在进行")
             return
@@ -37,7 +37,7 @@ final class FullBackupPhotoExporter {
         }
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.runExport(toolURL: toolURL, destinationURL: destinationURL)
+            self?.runExport(toolURL: toolURL, destinationURL: destinationURL, udid: udid, useNetwork: useNetwork)
         }
     }
 
@@ -47,7 +47,7 @@ final class FullBackupPhotoExporter {
         onLog?(.warning, "已取消完整备份任务")
     }
 
-    private func runExport(toolURL: URL, destinationURL: URL) {
+    private func runExport(toolURL: URL, destinationURL: URL, udid: String?, useNetwork: Bool) {
         let workURL = destinationURL.appendingPathComponent(".iphonebackup-mobilebackup", isDirectory: true)
 
         do {
@@ -57,10 +57,18 @@ final class FullBackupPhotoExporter {
 
             emitLog(.info, "使用完整备份协议读取照片，工作目录：\(workURL.path)")
             emitLog(.info, "如果 iPhone 弹出提示，请解锁并信任此电脑")
-            try run(toolURL, arguments: ["backup", "--full", workURL.path], phase: "完整备份")
+            try run(
+                toolURL,
+                arguments: BackupCommandArguments.backup(workPath: workURL.path, udid: udid, useNetwork: useNetwork),
+                phase: "完整备份"
+            )
 
             emitProgress(BackupProgressState(isRunning: true, completed: 1, total: 3, currentFilename: "解包备份文件"))
-            try run(toolURL, arguments: ["unback", workURL.path], phase: "解包备份")
+            try run(
+                toolURL,
+                arguments: BackupCommandArguments.unback(workPath: workURL.path),
+                phase: "解包备份"
+            )
 
             emitProgress(BackupProgressState(isRunning: true, completed: 2, total: 3, currentFilename: "整理照片和视频"))
             let sourceRoots = try photoSourceRoots(in: workURL)
