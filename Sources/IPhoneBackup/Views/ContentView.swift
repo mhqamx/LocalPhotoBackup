@@ -81,6 +81,7 @@ struct ContentView: View {
             }
         }
         .tint(Theme.accent)
+        .preferredColorScheme(.dark)
     }
 
     // MARK: - 侧边栏
