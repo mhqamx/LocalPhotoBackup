@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import IPhoneBackupCore
 
 @MainActor
 final class BackupViewModel: ObservableObject {

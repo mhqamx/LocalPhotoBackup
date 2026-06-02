@@ -1,4 +1,5 @@
 import SwiftUI
+import IPhoneBackupCore
 
 // MARK: - 视觉主题（黑 + 橙）
 
