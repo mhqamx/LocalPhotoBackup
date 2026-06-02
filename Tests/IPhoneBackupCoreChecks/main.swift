@@ -7,6 +7,49 @@ func expectEqual<T: Equatable>(_ actual: T, _ expected: T, _ message: String) {
     }
 }
 
+func makeDevice(_ name: String, connection: DeviceConnection, udid: String? = nil) -> PhotoDevice {
+    PhotoDevice(
+        id: "\(connection.rawValue)-\(name)",
+        name: name,
+        productKind: "iPhone",
+        transport: connection.label,
+        itemCount: 0,
+        isReady: true,
+        isRestricted: false,
+        connection: connection,
+        udid: udid
+    )
+}
+
+func testMergePrefersUSBForSameName() {
+    let usb = [makeDevice("Max 的 iPhone", connection: .usb)]
+    let wifi = [makeDevice("Max 的 iPhone", connection: .wifi, udid: "UDID1")]
+
+    let merged = BackupDeviceMerger.merge(usb: usb, wifi: wifi)
+
+    expectEqual(merged.count, 1, "same name deduped to one")
+    expectEqual(merged[0].connection, .usb, "USB wins for same name")
+}
+
+func testMergeKeepsDistinctDevicesSorted() {
+    let usb = [makeDevice("Zoe iPhone", connection: .usb)]
+    let wifi = [makeDevice("Amy iPhone", connection: .wifi, udid: "UDID2")]
+
+    let merged = BackupDeviceMerger.merge(usb: usb, wifi: wifi)
+
+    expectEqual(merged.count, 2, "distinct names both kept")
+    expectEqual(merged[0].name, "Amy iPhone", "sorted by name ascending")
+    expectEqual(merged[1].name, "Zoe iPhone", "sorted by name ascending")
+}
+
+func testMergeHandlesEmptyInputs() {
+    expectEqual(BackupDeviceMerger.merge(usb: [], wifi: []).count, 0, "empty merge is empty")
+
+    let onlyWifi = BackupDeviceMerger.merge(usb: [], wifi: [makeDevice("A", connection: .wifi, udid: "U")])
+    expectEqual(onlyWifi.count, 1, "wifi-only kept")
+    expectEqual(onlyWifi[0].connection, .wifi, "wifi-only keeps wifi connection")
+}
+
 func testKeepsOriginalFilenameWhenItHasNotBeenUsed() {
     let namer = BackupFileNamer()
 
@@ -110,6 +153,9 @@ func testOrganizesBackupPhotosIntoMediaTypeAndDateFolders() throws {
     )
 }
 
+testMergePrefersUSBForSameName()
+testMergeKeepsDistinctDevicesSorted()
+testMergeHandlesEmptyInputs()
 testKeepsOriginalFilenameWhenItHasNotBeenUsed()
 testAddsNumericSuffixForDuplicateNames()
 testSanitizesPathSeparatorsAndBlankNames()
