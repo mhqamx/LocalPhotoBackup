@@ -138,9 +138,12 @@ struct ContentView: View {
                     .foregroundStyle(device.isRestricted ? Color.orange : .white)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(device.name)
-                    .font(.system(.headline, design: .rounded))
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(device.name)
+                        .font(.system(.headline, design: .rounded))
+                        .lineLimit(1)
+                    connectionBadge(device.connection)
+                }
                 Text(viewModel.detailText(for: device))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -337,6 +340,21 @@ struct ContentView: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(Theme.accent)
         }
+    }
+
+    private func connectionBadge(_ connection: DeviceConnection) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: connection == .wifi ? "wifi" : "cable.connector")
+                .font(.system(size: 9, weight: .bold))
+            Text(connection.label)
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+        }
+        .foregroundStyle(Theme.accent)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(
+            Capsule().fill(Theme.accent.opacity(0.16))
+        )
     }
 
     private func iconName(for level: BackupLogEntry.Level) -> String {
