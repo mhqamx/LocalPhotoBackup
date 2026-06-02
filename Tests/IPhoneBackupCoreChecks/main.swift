@@ -125,6 +125,24 @@ func testSkipsExistingDateFolder() throws {
     expectEqual(policy.shouldSkipDateFolder(named: "2026-06-03", under: root), false, "missing date folder should export")
 }
 
+func testBackupArgsUSBHasNoNetworkFlags() {
+    let args = BackupCommandArguments.backup(workPath: "/tmp/work", udid: nil, useNetwork: false)
+
+    expectEqual(args, ["backup", "--full", "/tmp/work"], "usb backup args have no -n/-u")
+}
+
+func testBackupArgsWiFiAddsNetworkAndUDID() {
+    let args = BackupCommandArguments.backup(workPath: "/tmp/work", udid: "UDID9", useNetwork: true)
+
+    expectEqual(args, ["-n", "-u", "UDID9", "backup", "--full", "/tmp/work"], "wifi backup args prepend -n -u")
+}
+
+func testUnbackArgsNeverIncludeNetworkFlags() {
+    let args = BackupCommandArguments.unback(workPath: "/tmp/work")
+
+    expectEqual(args, ["unback", "/tmp/work"], "unback is local-only, no -n/-u")
+}
+
 func testOrganizesBackupPhotosIntoMediaTypeAndDateFolders() throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("IPhoneBackupOrganizerChecks-\(UUID().uuidString)")
@@ -180,6 +198,9 @@ testMergeHandlesEmptyInputs()
 testParseNetworkUDIDsBasic()
 testParseNetworkUDIDsStripsSuffixAndBlankLines()
 testParseNetworkUDIDsEmpty()
+testBackupArgsUSBHasNoNetworkFlags()
+testBackupArgsWiFiAddsNetworkAndUDID()
+testUnbackArgsNeverIncludeNetworkFlags()
 testKeepsOriginalFilenameWhenItHasNotBeenUsed()
 testAddsNumericSuffixForDuplicateNames()
 testSanitizesPathSeparatorsAndBlankNames()
