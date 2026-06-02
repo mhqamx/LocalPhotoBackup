@@ -1,0 +1,156 @@
+import AppKit
+import Foundation
+
+@MainActor
+final class BackupViewModel: ObservableObject {
+    @Published var devices: [PhotoDevice] = []
+    @Published var selectedDeviceID: PhotoDevice.ID?
+    @Published var destinationURL: URL?
+    @Published var progress = BackupProgressState()
+    @Published var logs: [BackupLogEntry] = []
+
+    private let importer = ImageCapturePhotoImporter()
+    private let fullBackupExporter = FullBackupPhotoExporter()
+
+    var selectedDevice: PhotoDevice? {
+        devices.first { $0.id == selectedDeviceID }
+    }
+
+    var canExport: Bool {
+        selectedDevice?.isReady == true && destinationURL != nil && !progress.isRunning
+    }
+
+    var usesFullBackupMode: Bool {
+        fullBackupExporter.isAvailable
+    }
+
+    var selectedDeviceDetail: String {
+        guard let selectedDevice else {
+            return "连接设备后即可导出相册。"
+        }
+        return detailText(for: selectedDevice)
+    }
+
+    var selectedDeviceReferenceCount: String? {
+        guard usesFullBackupMode, let selectedDevice, selectedDevice.itemCount > 0 else {
+            return nil
+        }
+        return "相机接口参考：\(selectedDevice.itemCount) 项；完整备份数量会在导出时统计。"
+    }
+
+    init() {
+        importer.onDevicesChanged = { [weak self] devices in
+            Task { @MainActor in
+                self?.devices = devices
+                if self?.selectedDeviceID == nil {
+                    self?.selectedDeviceID = devices.first?.id
+                } else if let selected = self?.selectedDeviceID, !devices.contains(where: { $0.id == selected }) {
+                    self?.selectedDeviceID = devices.first?.id
+                }
+            }
+        }
+        importer.onProgressChanged = { [weak self] progress in
+            Task { @MainActor in
+                self?.progress = progress
+            }
+        }
+        importer.onLog = { [weak self] level, message in
+            Task { @MainActor in
+                self?.appendLog(level: level, message)
+            }
+        }
+        importer.onExportFinished = { [weak self] result in
+            Task { @MainActor in
+                switch result {
+                case .success:
+                    NSSound(named: "Glass")?.play()
+                case .failure(let error):
+                    self?.appendLog(level: .error, error.localizedDescription)
+                }
+            }
+        }
+        fullBackupExporter.onProgressChanged = { [weak self] progress in
+            Task { @MainActor in
+                self?.progress = progress
+            }
+        }
+        fullBackupExporter.onLog = { [weak self] level, message in
+            Task { @MainActor in
+                self?.appendLog(level: level, message)
+            }
+        }
+        fullBackupExporter.onExportFinished = { [weak self] result in
+            Task { @MainActor in
+                switch result {
+                case .success:
+                    NSSound(named: "Glass")?.play()
+                case .failure(let error):
+                    self?.appendLog(level: .error, "完整备份未完成：\(error.localizedDescription)")
+                    self?.appendLog(level: .warning, "没有自动退回相机接口；相机接口会漏数据，并可能对 iCloud 占位资源产生大量 -9934 失败")
+                }
+            }
+        }
+        importer.startScanning()
+    }
+
+    func chooseDestination() {
+        let panel = NSOpenPanel()
+        panel.title = "选择相册导出位置"
+        panel.prompt = "选择"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+
+        if panel.runModal() == .OK {
+            destinationURL = panel.url
+            if let path = panel.url?.path {
+                appendLog(level: .info, "导出位置：\(path)")
+            }
+        }
+    }
+
+    func startExport() {
+        guard let selectedDeviceID, let destinationURL else { return }
+        if fullBackupExporter.isAvailable {
+            appendLog(level: .info, "检测到完整备份工具，将优先导出备份协议中的全部照片")
+            fullBackupExporter.export(to: destinationURL)
+        } else {
+            appendLog(level: .warning, "未检测到完整备份工具，只能使用 macOS 相机接口，可能漏掉 iCloud/备份协议中的资源")
+            importer.exportDevice(id: selectedDeviceID, to: destinationURL)
+        }
+    }
+
+    func cancelExport() {
+        fullBackupExporter.cancel()
+        importer.cancelExport()
+    }
+
+    func refreshSelectedDevice() {
+        guard let selectedDeviceID else { return }
+        importer.refreshDevice(id: selectedDeviceID)
+    }
+
+    func detailText(for device: PhotoDevice) -> String {
+        if usesFullBackupMode {
+            var parts: [String] = []
+            if !device.productKind.isEmpty {
+                parts.append(device.productKind)
+            }
+            parts.append("完整备份模式可用")
+            if device.isRestricted {
+                parts.append("需要解锁并信任")
+            }
+            return parts.joined(separator: " · ")
+        }
+
+        return device.detail
+    }
+
+    private func appendLog(level: BackupLogEntry.Level, _ message: String) {
+        logs.insert(BackupLogEntry(level: level, message: message), at: 0)
+        if logs.count > 300 {
+            logs.removeLast(logs.count - 300)
+        }
+    }
+}
