@@ -76,21 +76,21 @@ final class FullBackupPhotoExporter {
                 throw FullBackupError.noUnpackedPhotos
             }
 
-            var totalSummary = BackupPhotoOrganizationSummary(discovered: 0, copied: 0, skippedExistingDate: 0, failed: 0)
+            var totalSummary = BackupPhotoOrganizationSummary(discovered: 0, copied: 0, skippedExistingFiles: 0, failed: 0)
             for sourceRoot in sourceRoots {
                 let summary = try organizer.organize(from: sourceRoot, to: destinationURL) { [weak self] copied, total, currentPath in
                     self?.emitProgress(BackupProgressState(isRunning: true, completed: copied, total: total, currentFilename: currentPath))
                 }
                 totalSummary.discovered += summary.discovered
                 totalSummary.copied += summary.copied
-                totalSummary.skippedExistingDate += summary.skippedExistingDate
+                totalSummary.skippedExistingFiles += summary.skippedExistingFiles
                 totalSummary.failed += summary.failed
             }
 
             emitProgress(BackupProgressState(isRunning: false, completed: totalSummary.copied, total: totalSummary.discovered))
             emitLog(
                 .success,
-                "完整备份整理完成：发现 \(totalSummary.discovered) 个媒体文件，复制 \(totalSummary.copied) 个，跳过已存在日期 \(totalSummary.skippedExistingDate) 个，失败 \(totalSummary.failed) 个"
+                "完整备份整理完成：发现 \(totalSummary.discovered) 个媒体文件，复制新增 \(totalSummary.copied) 个，跳过已存在文件 \(totalSummary.skippedExistingFiles) 个，失败 \(totalSummary.failed) 个"
             )
             emitFinished(.success(totalSummary.copied))
         } catch {

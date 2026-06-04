@@ -74,31 +74,33 @@ final class ImageCapturePhotoImporter: NSObject {
                 file: file,
                 mediaFolderName: mediaFolderName(for: originalFilename),
                 dateFolderName: dateFolderName(for: file),
-                originalFilename: originalFilename
+                originalFilename: originalFilename,
+                destinationFilename: ""
             )
         }
-        let existingDateFolders = Set(
-            plannedItems
-                .map { ExistingMediaDateFolder(mediaFolderName: $0.mediaFolderName, dateFolderName: $0.dateFolderName) }
-                .filter {
-                    dateFolderPolicy.shouldSkipDateFolder(
-                        named: $0.dateFolderName,
-                        under: destinationURL.appendingPathComponent($0.mediaFolderName, isDirectory: true)
-                    )
-                }
-        )
-        let exportItems = plannedItems.filter {
-            !existingDateFolders.contains(
-                ExistingMediaDateFolder(mediaFolderName: $0.mediaFolderName, dateFolderName: $0.dateFolderName)
+        var namersByDateFolder: [String: BackupFileNamer] = [:]
+        let plannedDownloads = plannedItems.map { item in
+            let relativeFolder = "\(item.mediaFolderName)/\(item.dateFolderName)"
+            let namer = namersByDateFolder[relativeFolder] ?? BackupFileNamer()
+            namersByDateFolder[relativeFolder] = namer
+            return ExportItem(
+                file: item.file,
+                mediaFolderName: item.mediaFolderName,
+                dateFolderName: item.dateFolderName,
+                originalFilename: item.originalFilename,
+                destinationFilename: namer.filename(forOriginalName: item.originalFilename)
             )
         }
-        let skippedCount = plannedItems.count - exportItems.count
+        let exportItems = plannedDownloads.filter {
+            !FileManager.default.fileExists(atPath: destinationFileURL(for: $0, under: destinationURL).path)
+        }
+        let skippedCount = plannedDownloads.count - exportItems.count
 
         guard !exportItems.isEmpty else {
             onProgressChanged?(BackupProgressState(isRunning: false, completed: 0, total: plannedItems.count))
             onLog?(
                 .success,
-                "扫描到 \(plannedItems.count) 个项目，目标目录中的日期文件夹都已存在，本次无需导出"
+                "扫描到 \(plannedItems.count) 个项目，目标文件都已存在，本次无需导出"
             )
             return
         }
@@ -108,7 +110,7 @@ final class ImageCapturePhotoImporter: NSObject {
         onProgressChanged?(state.progress(currentFilename: ""))
         onLog?(
             .info,
-            "扫描到 \(plannedItems.count) 个项目；跳过 \(skippedCount) 个已存在日期目录中的项目；准备导出 \(exportItems.count) 个项目到 \(destinationURL.path)"
+            "扫描到 \(plannedItems.count) 个项目；跳过 \(skippedCount) 个已存在文件；准备导出新增 \(exportItems.count) 个项目到 \(destinationURL.path)"
         )
         downloadNextFile()
     }
@@ -268,6 +270,13 @@ final class ImageCapturePhotoImporter: NSObject {
         return "pic"
     }
 
+    private func destinationFileURL(for item: ExportItem, under destinationURL: URL) -> URL {
+        destinationURL
+            .appendingPathComponent(item.mediaFolderName, isDirectory: true)
+            .appendingPathComponent(item.dateFolderName, isDirectory: true)
+            .appendingPathComponent(item.destinationFilename)
+    }
+
     private func deviceID(for device: ICDevice) -> String {
         device.uuidString ?? device.serialNumberString ?? device.name ?? UUID().uuidString
     }
@@ -390,18 +399,13 @@ private struct ExportItem {
     let mediaFolderName: String
     let dateFolderName: String
     let originalFilename: String
-}
-
-private struct ExistingMediaDateFolder: Hashable {
-    let mediaFolderName: String
-    let dateFolderName: String
+    let destinationFilename: String
 }
 
 private final class ExportState {
     let camera: ICCameraDevice
     let items: [ExportItem]
     let destinationURL: URL
-    private var namersByDateFolder: [String: BackupFileNamer] = [:]
     var nextIndex = 0
     var completed = 0
     var failed = 0
@@ -413,10 +417,7 @@ private final class ExportState {
     }
 
     func filename(for item: ExportItem) -> String {
-        let relativeFolder = "\(item.mediaFolderName)/\(item.dateFolderName)"
-        let namer = namersByDateFolder[relativeFolder] ?? BackupFileNamer()
-        namersByDateFolder[relativeFolder] = namer
-        return namer.filename(forOriginalName: item.originalFilename)
+        item.destinationFilename
     }
 
     func progress(currentFilename: String) -> BackupProgressState {

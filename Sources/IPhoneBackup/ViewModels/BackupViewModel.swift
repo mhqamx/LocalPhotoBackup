@@ -46,7 +46,9 @@ final class BackupViewModel: ObservableObject {
     }
 
     var selectedDeviceReferenceCount: String? {
-        guard usesFullBackupMode, let selectedDevice, selectedDevice.itemCount > 0 else {
+        guard let selectedDevice,
+              BackupExportRoute.route(for: selectedDevice.connection, fullBackupAvailable: fullBackupExporter.isAvailable) == .fullBackup(useNetwork: true),
+              selectedDevice.itemCount > 0 else {
             return nil
         }
         return "相机接口参考：\(selectedDevice.itemCount) 项；完整备份数量会在导出时统计。"
@@ -135,21 +137,19 @@ final class BackupViewModel: ObservableObject {
     func startExport() {
         guard let selectedDeviceID, let destinationURL, let device = selectedDevice else { return }
 
-        switch device.connection {
-        case .wifi:
-            guard fullBackupExporter.isAvailable else {
+        switch BackupExportRoute.route(for: device.connection, fullBackupAvailable: fullBackupExporter.isAvailable) {
+        case .imageCapture:
+            if !fullBackupExporter.isAvailable {
+                appendLog(level: .warning, "未检测到完整备份工具，只能使用 macOS 相机接口，可能漏掉 iCloud/备份协议中的资源")
+            }
+            importer.exportDevice(id: selectedDeviceID, to: destinationURL)
+        case .fullBackup(let useNetwork):
+            appendLog(level: .info, "通过 Wi-Fi 导出 \(device.name) 的完整备份")
+            fullBackupExporter.export(to: destinationURL, udid: device.udid, useNetwork: useNetwork)
+        case .unavailable:
+            if device.connection == .wifi {
                 appendLog(level: .error, "无线导出需要 idevicebackup2；请执行 brew install libimobiledevice 后重试")
                 return
-            }
-            appendLog(level: .info, "通过 Wi-Fi 导出 \(device.name) 的完整备份")
-            fullBackupExporter.export(to: destinationURL, udid: device.udid, useNetwork: true)
-        case .usb:
-            if fullBackupExporter.isAvailable {
-                appendLog(level: .info, "检测到完整备份工具，将优先导出备份协议中的全部照片")
-                fullBackupExporter.export(to: destinationURL, udid: device.udid, useNetwork: false)
-            } else {
-                appendLog(level: .warning, "未检测到完整备份工具，只能使用 macOS 相机接口，可能漏掉 iCloud/备份协议中的资源")
-                importer.exportDevice(id: selectedDeviceID, to: destinationURL)
             }
         }
     }
@@ -170,7 +170,7 @@ final class BackupViewModel: ObservableObject {
     }
 
     func detailText(for device: PhotoDevice) -> String {
-        if usesFullBackupMode {
+        if BackupExportRoute.route(for: device.connection, fullBackupAvailable: fullBackupExporter.isAvailable) == .fullBackup(useNetwork: true) {
             var parts: [String] = [device.connection.label]
             if !device.productKind.isEmpty {
                 parts.append(device.productKind)

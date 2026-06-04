@@ -143,6 +143,25 @@ func testUnbackArgsNeverIncludeNetworkFlags() {
     expectEqual(args, ["unback", "/tmp/work"], "unback is local-only, no -n/-u")
 }
 
+func testUSBExportsUseImageCaptureFormatEvenWhenFullBackupIsAvailable() {
+    let route = BackupExportRoute.route(for: .usb, fullBackupAvailable: true)
+
+    expectEqual(route, .imageCapture, "usb export keeps master image capture format")
+}
+
+func testWiFiExportsUseFullBackupOnlyWhenAvailable() {
+    expectEqual(
+        BackupExportRoute.route(for: .wifi, fullBackupAvailable: true),
+        .fullBackup(useNetwork: true),
+        "wifi export uses network full backup when available"
+    )
+    expectEqual(
+        BackupExportRoute.route(for: .wifi, fullBackupAvailable: false),
+        .unavailable,
+        "wifi export requires full backup tool"
+    )
+}
+
 func testOrganizesBackupPhotosIntoMediaTypeAndDateFolders() throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("IPhoneBackupOrganizerChecks-\(UUID().uuidString)")
@@ -155,6 +174,11 @@ func testOrganizesBackupPhotosIntoMediaTypeAndDateFolders() throws {
         at: destination.appendingPathComponent("pic/2026-06-01", isDirectory: true),
         withIntermediateDirectories: true
     )
+    try "already exported".write(
+        to: destination.appendingPathComponent("pic/2026-06-01/2026_06_01_07_41_54_IMG_3097.JPG"),
+        atomically: true,
+        encoding: .utf8
+    )
     try "old".write(
         to: source.appendingPathComponent("2026_06_01_07_41_54_IMG_3097.JPG"),
         atomically: true,
@@ -162,6 +186,11 @@ func testOrganizesBackupPhotosIntoMediaTypeAndDateFolders() throws {
     )
     try "new".write(
         to: source.appendingPathComponent("2026_06_02_08_30_00_IMG_4000.HEIC"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try "same day new".write(
+        to: source.appendingPathComponent("2026_06_01_10_15_00_IMG_5000.HEIC"),
         atomically: true,
         encoding: .utf8
     )
@@ -177,9 +206,9 @@ func testOrganizesBackupPhotosIntoMediaTypeAndDateFolders() throws {
 
     let summary = try organizer.organize(from: source, to: destination)
 
-    expectEqual(summary.discovered, 3, "discovered media count")
-    expectEqual(summary.copied, 2, "copied media count")
-    expectEqual(summary.skippedExistingDate, 1, "skipped existing date count")
+    expectEqual(summary.discovered, 4, "discovered media count")
+    expectEqual(summary.copied, 3, "copied media count")
+    expectEqual(summary.skippedExistingFiles, 1, "skipped existing file count")
     expectEqual(
         FileManager.default.fileExists(atPath: destination.appendingPathComponent("pic/2026-06-02/2026_06_02_08_30_00_IMG_4000.HEIC").path),
         true,
@@ -189,6 +218,11 @@ func testOrganizesBackupPhotosIntoMediaTypeAndDateFolders() throws {
         FileManager.default.fileExists(atPath: destination.appendingPathComponent("video/2026-06-01/2026_06_01_09_30_00_IMG_4001.MOV").path),
         true,
         "same date video is not skipped by existing picture date"
+    )
+    expectEqual(
+        FileManager.default.fileExists(atPath: destination.appendingPathComponent("pic/2026-06-01/2026_06_01_10_15_00_IMG_5000.HEIC").path),
+        true,
+        "new same-day picture is exported even when the date folder already exists"
     )
 }
 
@@ -201,6 +235,8 @@ testParseNetworkUDIDsEmpty()
 testBackupArgsUSBHasNoNetworkFlags()
 testBackupArgsWiFiAddsNetworkAndUDID()
 testUnbackArgsNeverIncludeNetworkFlags()
+testUSBExportsUseImageCaptureFormatEvenWhenFullBackupIsAvailable()
+testWiFiExportsUseFullBackupOnlyWhenAvailable()
 testKeepsOriginalFilenameWhenItHasNotBeenUsed()
 testAddsNumericSuffixForDuplicateNames()
 testSanitizesPathSeparatorsAndBlankNames()

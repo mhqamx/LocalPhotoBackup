@@ -3,13 +3,13 @@ import Foundation
 public struct BackupPhotoOrganizationSummary: Equatable {
     public var discovered: Int
     public var copied: Int
-    public var skippedExistingDate: Int
+    public var skippedExistingFiles: Int
     public var failed: Int
 
-    public init(discovered: Int, copied: Int, skippedExistingDate: Int, failed: Int) {
+    public init(discovered: Int, copied: Int, skippedExistingFiles: Int, failed: Int) {
         self.discovered = discovered
         self.copied = copied
-        self.skippedExistingDate = skippedExistingDate
+        self.skippedExistingFiles = skippedExistingFiles
         self.failed = failed
     }
 }
@@ -42,44 +42,38 @@ public struct BackupPhotoFileOrganizer {
                 originalFilename: url.lastPathComponent
             )
         }
-        let existingDateFolders = Set(
-            plannedItems
-                .map { ExistingMediaDateFolder(mediaFolderName: $0.mediaFolderName, dateFolderName: $0.dateFolderName) }
-                .filter {
-                    datePolicy.shouldSkipDateFolder(
-                        named: $0.dateFolderName,
-                        under: destinationRoot.appendingPathComponent($0.mediaFolderName, isDirectory: true)
-                    )
-                }
-        )
-        let exportItems = plannedItems.filter {
-            !existingDateFolders.contains(
-                ExistingMediaDateFolder(mediaFolderName: $0.mediaFolderName, dateFolderName: $0.dateFolderName)
+        var namersByDateFolder: [String: BackupFileNamer] = [:]
+        let plannedDestinations = plannedItems.map { item in
+            let relativeFolder = "\(item.mediaFolderName)/\(item.dateFolderName)"
+            let namer = namersByDateFolder[relativeFolder] ?? BackupFileNamer()
+            namersByDateFolder[relativeFolder] = namer
+            return BackupPlannedPhotoDestination(
+                item: item,
+                relativeFolder: relativeFolder,
+                filename: namer.filename(forOriginalName: item.originalFilename)
             )
+        }
+        let exportItems = plannedDestinations.filter {
+            !FileManager.default.fileExists(atPath: destinationURL(for: $0, under: destinationRoot).path)
         }
 
         var summary = BackupPhotoOrganizationSummary(
             discovered: plannedItems.count,
             copied: 0,
-            skippedExistingDate: plannedItems.count - exportItems.count,
+            skippedExistingFiles: plannedDestinations.count - exportItems.count,
             failed: 0
         )
-        var namersByDateFolder: [String: BackupFileNamer] = [:]
 
-        for item in exportItems {
-            let relativeFolder = "\(item.mediaFolderName)/\(item.dateFolderName)"
+        for planned in exportItems {
+            let item = planned.item
+            let relativeFolder = planned.relativeFolder
             let dateFolderURL = destinationRoot
                 .appendingPathComponent(item.mediaFolderName, isDirectory: true)
                 .appendingPathComponent(item.dateFolderName, isDirectory: true)
             do {
                 try FileManager.default.createDirectory(at: dateFolderURL, withIntermediateDirectories: true)
-                let namer = namersByDateFolder[relativeFolder] ?? BackupFileNamer()
-                namersByDateFolder[relativeFolder] = namer
-                let filename = namer.filename(forOriginalName: item.originalFilename)
+                let filename = planned.filename
                 let destinationURL = dateFolderURL.appendingPathComponent(filename)
-                if FileManager.default.fileExists(atPath: destinationURL.path) {
-                    try FileManager.default.removeItem(at: destinationURL)
-                }
                 try FileManager.default.copyItem(at: item.sourceURL, to: destinationURL)
                 summary.copied += 1
                 progress?(summary.copied, exportItems.count, "\(relativeFolder)/\(filename)")
@@ -90,6 +84,13 @@ public struct BackupPhotoFileOrganizer {
         }
 
         return summary
+    }
+
+    private func destinationURL(for planned: BackupPlannedPhotoDestination, under destinationRoot: URL) -> URL {
+        destinationRoot
+            .appendingPathComponent(planned.item.mediaFolderName, isDirectory: true)
+            .appendingPathComponent(planned.item.dateFolderName, isDirectory: true)
+            .appendingPathComponent(planned.filename)
     }
 
     public func discoverMediaFiles(under rootURL: URL) throws -> [URL] {
@@ -173,13 +174,14 @@ private struct BackupSourcePhoto {
     let originalFilename: String
 }
 
-private struct ExistingMediaDateFolder: Hashable {
-    let mediaFolderName: String
-    let dateFolderName: String
-}
-
 private struct BackupFilenameDateComponents {
     let year: Int
     let month: Int
     let day: Int
+}
+
+private struct BackupPlannedPhotoDestination {
+    let item: BackupSourcePhoto
+    let relativeFolder: String
+    let filename: String
 }
