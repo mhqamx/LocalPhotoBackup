@@ -6,7 +6,7 @@ struct IPhoneBackupApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        WindowGroup("iPhone 相册备份") {
+        WindowGroup("iPhone / iPad 相册备份") {
             ContentView()
         }
         .commands {

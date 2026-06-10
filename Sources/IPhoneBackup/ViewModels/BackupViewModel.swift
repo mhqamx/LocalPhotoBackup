@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import IPhoneBackupCore
 
 @MainActor
 final class BackupViewModel: ObservableObject {
@@ -11,6 +12,19 @@ final class BackupViewModel: ObservableObject {
 
     private let importer = ImageCapturePhotoImporter()
     private let fullBackupExporter = FullBackupPhotoExporter()
+    private let networkDiscovery = NetworkDeviceDiscovery()
+
+    private var usbDevices: [PhotoDevice] = []
+    private var wifiDevices: [PhotoDevice] = []
+
+    private func rebuildDevices() {
+        devices = BackupDeviceMerger.merge(usb: usbDevices, wifi: wifiDevices)
+        if selectedDeviceID == nil {
+            selectedDeviceID = devices.first?.id
+        } else if let selected = selectedDeviceID, !devices.contains(where: { $0.id == selected }) {
+            selectedDeviceID = devices.first?.id
+        }
+    }
 
     var selectedDevice: PhotoDevice? {
         devices.first { $0.id == selectedDeviceID }
@@ -32,7 +46,9 @@ final class BackupViewModel: ObservableObject {
     }
 
     var selectedDeviceReferenceCount: String? {
-        guard usesFullBackupMode, let selectedDevice, selectedDevice.itemCount > 0 else {
+        guard let selectedDevice,
+              BackupExportRoute.route(for: selectedDevice.connection, fullBackupAvailable: fullBackupExporter.isAvailable) == .fullBackup(useNetwork: true),
+              selectedDevice.itemCount > 0 else {
             return nil
         }
         return "相机接口参考：\(selectedDevice.itemCount) 项；完整备份数量会在导出时统计。"
@@ -41,12 +57,8 @@ final class BackupViewModel: ObservableObject {
     init() {
         importer.onDevicesChanged = { [weak self] devices in
             Task { @MainActor in
-                self?.devices = devices
-                if self?.selectedDeviceID == nil {
-                    self?.selectedDeviceID = devices.first?.id
-                } else if let selected = self?.selectedDeviceID, !devices.contains(where: { $0.id == selected }) {
-                    self?.selectedDeviceID = devices.first?.id
-                }
+                self?.usbDevices = devices
+                self?.rebuildDevices()
             }
         }
         importer.onProgressChanged = { [weak self] progress in
@@ -90,6 +102,18 @@ final class BackupViewModel: ObservableObject {
                 }
             }
         }
+        networkDiscovery.onDevicesChanged = { [weak self] devices in
+            Task { @MainActor in
+                self?.wifiDevices = devices
+                self?.rebuildDevices()
+            }
+        }
+        networkDiscovery.onLog = { [weak self] level, message in
+            Task { @MainActor in
+                self?.appendLog(level: level, message)
+            }
+        }
+        networkDiscovery.start()
         importer.startScanning()
     }
 
@@ -111,13 +135,22 @@ final class BackupViewModel: ObservableObject {
     }
 
     func startExport() {
-        guard let selectedDeviceID, let destinationURL else { return }
-        if fullBackupExporter.isAvailable {
-            appendLog(level: .info, "检测到完整备份工具，将优先导出备份协议中的全部照片")
-            fullBackupExporter.export(to: destinationURL)
-        } else {
-            appendLog(level: .warning, "未检测到完整备份工具，只能使用 macOS 相机接口，可能漏掉 iCloud/备份协议中的资源")
+        guard let selectedDeviceID, let destinationURL, let device = selectedDevice else { return }
+
+        switch BackupExportRoute.route(for: device.connection, fullBackupAvailable: fullBackupExporter.isAvailable) {
+        case .imageCapture:
+            if !fullBackupExporter.isAvailable {
+                appendLog(level: .warning, "未检测到完整备份工具，只能使用 macOS 相机接口，可能漏掉 iCloud/备份协议中的资源")
+            }
             importer.exportDevice(id: selectedDeviceID, to: destinationURL)
+        case .fullBackup(let useNetwork):
+            appendLog(level: .info, "通过 Wi-Fi 导出 \(device.name) 的完整备份")
+            fullBackupExporter.export(to: destinationURL, udid: device.udid, useNetwork: useNetwork)
+        case .unavailable:
+            if device.connection == .wifi {
+                appendLog(level: .error, "无线导出需要 idevicebackup2；请执行 brew install libimobiledevice 后重试")
+                return
+            }
         }
     }
 
@@ -127,13 +160,18 @@ final class BackupViewModel: ObservableObject {
     }
 
     func refreshSelectedDevice() {
-        guard let selectedDeviceID else { return }
-        importer.refreshDevice(id: selectedDeviceID)
+        guard let selectedDeviceID, let device = selectedDevice else { return }
+        switch device.connection {
+        case .wifi:
+            networkDiscovery.refresh()
+        case .usb:
+            importer.refreshDevice(id: selectedDeviceID)
+        }
     }
 
     func detailText(for device: PhotoDevice) -> String {
-        if usesFullBackupMode {
-            var parts: [String] = []
+        if BackupExportRoute.route(for: device.connection, fullBackupAvailable: fullBackupExporter.isAvailable) == .fullBackup(useNetwork: true) {
+            var parts: [String] = [device.connection.label]
             if !device.productKind.isEmpty {
                 parts.append(device.productKind)
             }

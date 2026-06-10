@@ -1,32 +1,5 @@
 import Foundation
 
-struct PhotoDevice: Identifiable, Equatable {
-    let id: String
-    var name: String
-    var productKind: String
-    var transport: String
-    var itemCount: Int
-    var isReady: Bool
-    var isRestricted: Bool
-
-    var detail: String {
-        var parts: [String] = []
-        if !productKind.isEmpty {
-            parts.append(productKind)
-        }
-        if !transport.isEmpty {
-            parts.append(transport)
-        }
-        if itemCount > 0 {
-            parts.append("\(itemCount) 个项目")
-        }
-        if isRestricted {
-            parts.append("需要解锁并信任")
-        }
-        return parts.isEmpty ? "等待设备内容" : parts.joined(separator: " · ")
-    }
-}
-
 struct BackupProgressState: Equatable {
     var isRunning = false
     var completed = 0
