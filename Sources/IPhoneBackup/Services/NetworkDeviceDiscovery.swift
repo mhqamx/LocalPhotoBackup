@@ -1,7 +1,7 @@
 import Foundation
 import IPhoneBackupCore
 
-/// 通过 libimobiledevice 轮询发现同一 Wi-Fi 网络下、已配对并开启 Wi-Fi 同步的 iOS 设备。
+/// 通过 libimobiledevice 轮询发现同一 Wi-Fi 网络下、已配对并开启 Wi-Fi 同步的 Apple 移动设备。
 final class NetworkDeviceDiscovery {
     var onDevicesChanged: (([PhotoDevice]) -> Void)?
     var onLog: ((BackupLogEntry.Level, String) -> Void)?
@@ -56,8 +56,8 @@ final class NetworkDeviceDiscovery {
 
         let udids = NetworkDeviceParsing.parseUDIDs(from: output)
         let devices = udids.map { udid -> PhotoDevice in
-            let name = deviceValue(for: udid, key: "DeviceName") ?? "Wi-Fi iPhone"
-            let product = deviceValue(for: udid, key: "ProductType") ?? "iPhone"
+            let product = deviceValue(for: udid, key: "ProductType") ?? "Apple 移动设备"
+            let name = deviceValue(for: udid, key: "DeviceName") ?? fallbackDeviceName(forProductKind: product)
             return PhotoDevice(
                 id: "wifi-\(udid)",
                 name: name,
@@ -80,6 +80,16 @@ final class NetworkDeviceDiscovery {
         }
         let value = output.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
+    }
+
+    private func fallbackDeviceName(forProductKind productKind: String) -> String {
+        if productKind.localizedCaseInsensitiveContains("iPad") {
+            return "Wi-Fi iPad"
+        }
+        if productKind.localizedCaseInsensitiveContains("iPhone") {
+            return "Wi-Fi iPhone"
+        }
+        return "Wi-Fi Apple 设备"
     }
 
     private func runCapturing(_ url: URL, arguments: [String]) -> String? {

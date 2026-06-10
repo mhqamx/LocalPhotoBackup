@@ -143,6 +143,50 @@ func testUnbackArgsNeverIncludeNetworkFlags() {
     expectEqual(args, ["unback", "/tmp/work"], "unback is local-only, no -n/-u")
 }
 
+func testCameraExportPolicyOnlyQueuesPrimaryMediaFiles() {
+    let policy = BackupCameraFilePolicy()
+
+    expectEqual(
+        policy.shouldQueueDownload(originalFilename: "IMG_0001.HEIC", fallbackName: nil),
+        true,
+        "heic photo should be queued"
+    )
+    expectEqual(
+        policy.shouldQueueDownload(originalFilename: "IMG_0002.MOV", fallbackName: nil),
+        true,
+        "movie should be queued"
+    )
+    expectEqual(
+        policy.shouldQueueDownload(originalFilename: "IMG_0003.DNG", fallbackName: nil),
+        true,
+        "raw image should be queued"
+    )
+    expectEqual(
+        policy.shouldQueueDownload(originalFilename: "IMG_0001.AAE", fallbackName: nil),
+        false,
+        "apple adjustment sidecar should not be queued as a primary download"
+    )
+    expectEqual(
+        policy.shouldQueueDownload(originalFilename: nil, fallbackName: "IMG_0001.XMP"),
+        false,
+        "metadata sidecar fallback name should not be queued"
+    )
+    expectEqual(
+        policy.shouldQueueDownload(originalFilename: "IMG_0001.AA", fallbackName: nil),
+        false,
+        "non-photo sidecar should not be queued"
+    )
+}
+
+func testCameraFailurePolicyStopsAfterConsecutiveFailures() {
+    let policy = BackupCameraFailurePolicy(maxConsecutiveFailures: 3)
+
+    expectEqual(policy.shouldStop(consecutiveFailures: 1), false, "first failure should not stop export")
+    expectEqual(policy.shouldStop(consecutiveFailures: 2), false, "second failure should not stop export")
+    expectEqual(policy.shouldStop(consecutiveFailures: 3), true, "third consecutive failure should stop export")
+    expectEqual(policy.shouldStop(consecutiveFailures: 4), true, "failures past the threshold should stop export")
+}
+
 func testUSBExportsUseImageCaptureFormatEvenWhenFullBackupIsAvailable() {
     let route = BackupExportRoute.route(for: .usb, fullBackupAvailable: true)
 
@@ -235,6 +279,8 @@ testParseNetworkUDIDsEmpty()
 testBackupArgsUSBHasNoNetworkFlags()
 testBackupArgsWiFiAddsNetworkAndUDID()
 testUnbackArgsNeverIncludeNetworkFlags()
+testCameraExportPolicyOnlyQueuesPrimaryMediaFiles()
+testCameraFailurePolicyStopsAfterConsecutiveFailures()
 testUSBExportsUseImageCaptureFormatEvenWhenFullBackupIsAvailable()
 testWiFiExportsUseFullBackupOnlyWhenAvailable()
 testKeepsOriginalFilenameWhenItHasNotBeenUsed()

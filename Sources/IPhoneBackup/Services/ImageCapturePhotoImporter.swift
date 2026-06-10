@@ -10,6 +10,8 @@ final class ImageCapturePhotoImporter: NSObject {
 
     private let browser = ICDeviceBrowser()
     private let dateFolderPolicy = BackupDateFolderPolicy()
+    private let cameraFilePolicy = BackupCameraFilePolicy()
+    private let failurePolicy = BackupCameraFailurePolicy()
     private var cameras: [String: ICCameraDevice] = [:]
     private var devices: [String: PhotoDevice] = [:]
     private var exportState: ExportState?
@@ -25,7 +27,7 @@ final class ImageCapturePhotoImporter: NSObject {
     func startScanning() {
         guard !browser.isBrowsing else { return }
         browser.start()
-        onLog?(.info, "开始扫描通过 USB 连接的 iPhone 或相机设备")
+        onLog?(.info, "开始扫描通过 USB 连接的 iPhone、iPad 或相机设备")
     }
 
     func stopScanning() {
@@ -48,7 +50,7 @@ final class ImageCapturePhotoImporter: NSObject {
             return
         }
         guard !camera.isAccessRestrictedAppleDevice else {
-            onLog?(.error, "请先解锁 iPhone，并在手机上点按“信任此电脑”")
+            onLog?(.error, "请先解锁设备，并在设备上点按“信任此电脑”")
             return
         }
 
@@ -127,9 +129,14 @@ final class ImageCapturePhotoImporter: NSObject {
 
         guard state.nextIndex < state.items.count else {
             let completed = state.completed
+            let failed = state.failed
             exportState = nil
             onProgressChanged?(BackupProgressState(isRunning: false, completed: completed, total: completed))
-            onLog?(.success, "导出完成，共 \(completed) 个项目")
+            if failed > 0 {
+                onLog?(.warning, "导出结束：成功 \(completed) 个，失败 \(failed) 个")
+            } else {
+                onLog?(.success, "导出完成，共 \(completed) 个项目")
+            }
             onExportFinished?(.success(completed))
             return
         }
@@ -158,11 +165,11 @@ final class ImageCapturePhotoImporter: NSObject {
         let options: [ICDownloadOption: Any] = [
             .downloadsDirectoryURL: targetDirectory,
             .saveAsFilename: filename,
-            .overwrite: false,
-            .sidecarFiles: true
+            .overwrite: false
         ]
 
         onProgressChanged?(state.progress(currentFilename: "\(relativeFolder)/\(filename)"))
+        state.currentAttempt += 1
         _ = file.requestDownload(options: options) { [weak self] savedFilename, error in
             DispatchQueue.main.async {
                 self?.handleDownloadedFile(file, requestedPath: "\(relativeFolder)/\(filename)", savedFilename: savedFilename, error: error)
@@ -179,25 +186,67 @@ final class ImageCapturePhotoImporter: NSObject {
         guard let state = exportState else { return }
 
         if let error {
+            if failurePolicy.shouldRetry(attempts: state.currentAttempt) {
+                onLog?(.warning, "导出失败，准备重试 \(requestedPath)：\(Self.describe(error))")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                    self?.downloadNextFile()
+                }
+                return
+            }
+
             state.failed += 1
-            onLog?(.error, "导出失败 \(requestedPath)：\(error.localizedDescription)")
+            state.consecutiveFailures += 1
+            onLog?(.error, "导出失败 \(requestedPath)：\(Self.describe(error))")
+
+            if failurePolicy.shouldStop(consecutiveFailures: state.consecutiveFailures) {
+                stopAfterRepeatedFailures(state: state, lastPath: requestedPath, lastError: error)
+                return
+            }
         } else {
             state.completed += 1
+            state.consecutiveFailures = 0
             let finalName = savedFilename ?? requestedPath
             onLog?(.success, "已导出 \(finalName)")
         }
 
         state.nextIndex += 1
+        state.currentAttempt = 0
         onProgressChanged?(state.progress(currentFilename: requestedPath))
         downloadNextFile()
+    }
+
+    private func stopAfterRepeatedFailures(state: ExportState, lastPath: String, lastError: Error) {
+        let completed = state.completed
+        let failed = state.failed
+        let consecutiveFailures = state.consecutiveFailures
+        exportState = nil
+        state.camera.cancelDownload()
+        onProgressChanged?(BackupProgressState(isRunning: false, completed: completed, total: state.items.count))
+        let error = ImageCaptureExportError.repeatedFailures(
+            consecutiveFailures: consecutiveFailures,
+            completed: completed,
+            failed: failed,
+            lastPath: lastPath,
+            lastErrorDescription: Self.describe(lastError)
+        )
+        onLog?(.error, error.localizedDescription)
+        onExportFinished?(.failure(error))
+    }
+
+    private static func describe(_ error: Error) -> String {
+        let nsError = error as NSError
+        if nsError.domain.isEmpty {
+            return error.localizedDescription
+        }
+        return "\(error.localizedDescription)（\(nsError.domain) \(nsError.code)）"
     }
 
     private func updateDevice(_ camera: ICCameraDevice) {
         let id = deviceID(for: camera)
         let device = PhotoDevice(
             id: id,
-            name: camera.name ?? "未命名 iPhone",
-            productKind: camera.productKind ?? "iPhone",
+            name: camera.name ?? "未命名设备",
+            productKind: camera.productKind ?? "Apple 移动设备",
             transport: camera.transportType ?? "",
             itemCount: allExportableFiles(from: camera).count,
             isReady: camera.hasOpenSession && !camera.isAccessRestrictedAppleDevice,
@@ -225,12 +274,12 @@ final class ImageCapturePhotoImporter: NSObject {
             files = directFiles
         }
 
-        let filesWithSidecars = files.flatMap { file -> [ICCameraFile] in
-            let sidecars = (file.sidecarFiles ?? []).compactMap { $0 as? ICCameraFile }
-            return [file] + sidecars
+        return uniqueFiles(files).filter { file in
+            cameraFilePolicy.shouldQueueDownload(
+                originalFilename: file.originalFilename,
+                fallbackName: file.name
+            )
         }
-
-        return uniqueFiles(filesWithSidecars)
     }
 
     private func flattenFiles(_ items: [ICCameraItem]) -> [ICCameraFile] {
@@ -409,6 +458,8 @@ private final class ExportState {
     var nextIndex = 0
     var completed = 0
     var failed = 0
+    var consecutiveFailures = 0
+    var currentAttempt = 0
 
     init(camera: ICCameraDevice, items: [ExportItem], destinationURL: URL) {
         self.camera = camera
@@ -427,5 +478,22 @@ private final class ExportState {
             total: items.count,
             currentFilename: currentFilename
         )
+    }
+}
+
+private enum ImageCaptureExportError: LocalizedError {
+    case repeatedFailures(
+        consecutiveFailures: Int,
+        completed: Int,
+        failed: Int,
+        lastPath: String,
+        lastErrorDescription: String
+    )
+
+    var errorDescription: String? {
+        switch self {
+        case .repeatedFailures(let consecutiveFailures, let completed, let failed, let lastPath, let lastErrorDescription):
+            return "连续 \(consecutiveFailures) 个项目导出失败，已停止本轮导出，避免继续批量报错。已成功 \(completed) 个，失败 \(failed) 个；最后失败：\(lastPath)：\(lastErrorDescription)。请保持 iPad 解锁亮屏，确认 iCloud 照片已下载到本机，并检查 USB 线和目标磁盘后重试。"
+        }
     }
 }

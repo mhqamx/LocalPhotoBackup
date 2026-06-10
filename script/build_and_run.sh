@@ -34,9 +34,9 @@ cat >"$INFO_PLIST" <<PLIST
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_ID</string>
   <key>CFBundleName</key>
-  <string>iPhone 相册备份</string>
+  <string>iPhone / iPad 相册备份</string>
   <key>CFBundleDisplayName</key>
-  <string>iPhone 相册备份</string>
+  <string>iPhone / iPad 相册备份</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -48,9 +48,9 @@ cat >"$INFO_PLIST" <<PLIST
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
   <key>NSCameraUsageDescription</key>
-  <string>用于访问通过 USB 连接的 iPhone 相册内容并导出到你选择的位置。</string>
+  <string>用于访问通过 USB 连接的 iPhone 或 iPad 相册内容并导出到你选择的位置。</string>
   <key>NSPhotoLibraryUsageDescription</key>
-  <string>用于读取 iPhone 相册中的照片和视频。</string>
+  <string>用于读取 iPhone 或 iPad 相册中的照片和视频。</string>
   <key>NSRemovableVolumesUsageDescription</key>
   <string>用于将照片和视频导出到移动硬盘或 U 盘。</string>
 </dict>

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_NAME="IPhoneBackup"
-DISPLAY_NAME="iPhone 相册备份"
+DISPLAY_NAME="iPhone / iPad 相册备份"
 BUNDLE_ID="com.local.IPhoneBackup"
 VERSION="0.1.0"
 BUILD_NUMBER="1"
@@ -53,9 +53,9 @@ cat >"$INFO_PLIST" <<PLIST
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
   <key>NSCameraUsageDescription</key>
-  <string>用于访问通过 USB 连接的 iPhone 相册内容并导出到你选择的位置。</string>
+  <string>用于访问通过 USB 连接的 iPhone 或 iPad 相册内容并导出到你选择的位置。</string>
   <key>NSPhotoLibraryUsageDescription</key>
-  <string>用于读取 iPhone 相册中的照片和视频。</string>
+  <string>用于读取 iPhone 或 iPad 相册中的照片和视频。</string>
   <key>NSRemovableVolumesUsageDescription</key>
   <string>用于将照片和视频导出到移动硬盘或 U 盘。</string>
 </dict>

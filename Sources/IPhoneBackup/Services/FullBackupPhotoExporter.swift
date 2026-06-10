@@ -56,7 +56,7 @@ final class FullBackupPhotoExporter {
             emitProgress(BackupProgressState(isRunning: true, completed: 0, total: 3, currentFilename: "准备完整备份"))
 
             emitLog(.info, "使用完整备份协议读取照片，工作目录：\(workURL.path)")
-            emitLog(.info, "如果 iPhone 弹出提示，请解锁并信任此电脑")
+            emitLog(.info, "如果设备弹出提示，请解锁并信任此电脑")
             try run(
                 toolURL,
                 arguments: BackupCommandArguments.backup(workPath: workURL.path, udid: udid, useNetwork: useNetwork),

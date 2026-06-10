@@ -64,7 +64,7 @@ struct ContentView: View {
         } detail: {
             backupDetail
         }
-        .navigationTitle("iPhone 相册备份")
+        .navigationTitle("iPhone / iPad 相册备份")
         .toolbar {
             ToolbarItemGroup {
                 Button {
@@ -112,13 +112,13 @@ struct ContentView: View {
     private var emptyDeviceRow: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Image(systemName: "iphone.slash")
+                Image(systemName: "iphone.and.arrow.forward")
                     .font(.title3)
                     .foregroundStyle(Theme.accent)
-                Text("未发现 iPhone")
+                Text("未发现 iPhone / iPad")
                     .font(.system(.headline, design: .rounded))
             }
-            Text("请用 USB 连接 iPhone，解锁后在手机上选择信任此电脑。")
+            Text("请用 USB 连接 iPhone 或 iPad，解锁后在设备上选择信任此电脑。")
                 .foregroundStyle(.secondary)
                 .font(.callout)
         }
@@ -133,7 +133,7 @@ struct ContentView: View {
                           ? AnyShapeStyle(Color.orange.opacity(0.18))
                           : AnyShapeStyle(Theme.accentGradient))
                     .frame(width: 38, height: 38)
-                Image(systemName: device.isRestricted ? "lock.fill" : "iphone.gen3")
+                Image(systemName: device.isRestricted ? "lock.fill" : deviceIconName(for: device))
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(device.isRestricted ? Color.orange : .white)
             }
@@ -178,13 +178,13 @@ struct ContentView: View {
                     .fill(Theme.accentGradient)
                     .frame(width: 56, height: 56)
                     .shadow(color: Theme.accent.opacity(0.45), radius: 12, x: 0, y: 6)
-                Image(systemName: viewModel.selectedDevice == nil ? "iphone.gen3.slash" : "photo.stack.fill")
+                Image(systemName: viewModel.selectedDevice == nil ? "iphone.and.arrow.forward" : "photo.stack.fill")
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(.white)
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(viewModel.selectedDevice?.name ?? "等待连接 iPhone")
+                Text(viewModel.selectedDevice?.name ?? "等待连接 iPhone / iPad")
                     .font(.system(.largeTitle, design: .rounded).weight(.bold))
                     .foregroundStyle(Theme.textPrimary)
                 Text(viewModel.selectedDeviceDetail)
@@ -355,6 +355,14 @@ struct ContentView: View {
         .background(
             Capsule().fill(Theme.accent.opacity(0.16))
         )
+    }
+
+    private func deviceIconName(for device: PhotoDevice) -> String {
+        if device.productKind.localizedCaseInsensitiveContains("iPad")
+            || device.name.localizedCaseInsensitiveContains("iPad") {
+            return "ipad"
+        }
+        return "iphone.gen3"
     }
 
     private func iconName(for level: BackupLogEntry.Level) -> String {
